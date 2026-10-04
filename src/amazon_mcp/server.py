@@ -16,6 +16,8 @@ Serwer daje dostęp do konta sprzedawcy Amazon (Seller Central) przez Selling Pa
 - Operacje zapisu (update_price, update_listing, create_listing, delete_listing, update_ad_campaign)
   najpierw wywołuj bez confirm, pokaż użytkownikowi podgląd i dopiero po jego zgodzie wywołaj z confirm=true.
 - Parametr marketplace to kod kraju (PL, DE, FR, ...); domyślny jest ustawiony w .env.
+- Reklamy (Amazon Ads API): list_ad_campaigns daje kampanie, a wyniki i ACoS dają
+  request_ad_report + get_ad_report (raport tworzy się asynchronicznie).
 - Odpowiedzi z next_token są stronicowane: przekaż token w kolejnym wywołaniu.
 """
 

@@ -200,3 +200,12 @@ AD_CAMPAIGNS = [
      "state": "PAUSED", "dailyBudget": 20.0, "startDate": "20260910",
      "metrics": {"impressions": 4100, "clicks": 51, "cost": 38.25, "sales": 89.00, "acos": 43.0}},
 ]
+
+AD_PROFILES = [
+    {"profileId": 1234567890123456, "countryCode": "DE", "currencyCode": "EUR", "timezone": "Europe/Paris",
+     "accountInfo": {"marketplaceStringId": "A1PA6795UKMFR9", "id": "A1MOCKSELLER", "type": "seller",
+                     "name": "Mock Shop"}},
+    {"profileId": 2234567890123456, "countryCode": "PL", "currencyCode": "PLN", "timezone": "Europe/Warsaw",
+     "accountInfo": {"marketplaceStringId": "A1C3SOZRARQ6R3", "id": "A1MOCKSELLER", "type": "seller",
+                     "name": "Mock Shop"}},
+]

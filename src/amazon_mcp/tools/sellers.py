@@ -1,6 +1,7 @@
 """Sellers API + status serwera."""
 
 from amazon_mcp import mock_data
+from amazon_mcp.ads_client import AdsClient
 from amazon_mcp.client import spapi
 from amazon_mcp.tools._common import READ_ONLY
 
@@ -15,7 +16,8 @@ def register(mcp) -> None:
             "default_marketplace": cfg.marketplace,
             "seller_id_set": bool(cfg.seller_id),
             "missing_sp_api_credentials": cfg.missing_sp_api_credentials(),
-            "advertising_configured": bool(cfg.ads_client_id and cfg.ads_refresh_token and cfg.ads_profile_id),
+            "ads_region": cfg.ads_region,
+            "missing_ads_api_credentials": AdsClient(cfg).missing_credentials(),
             "writes_allowed": cfg.allow_writes,
         }
 
