@@ -53,7 +53,7 @@ amazon-mcp/
 | Finanse | `list_financial_events`, `get_order_financial_events` | Finances v0 |
 | Opłaty | `estimate_fees` | Product Fees v0 |
 | Feedy | `list_feeds`, `get_feed` | Feeds 2021-06-30 |
-| Reklamy | `list_ad_campaigns`, `update_ad_campaign`* | Amazon Ads API (tylko mock) |
+| Reklamy | `list_ad_profiles`, `list_ad_campaigns`, `update_ad_campaign`*, `request_ad_report`, `get_ad_report` | Amazon Ads API: Sponsored Products v3, Reporting v3 |
 
 \* Operacje zapisu. Bez `confirm=true` zwracają tylko **podgląd** tego, co zostałoby wysłane.
 Claude jest poinstruowany, żeby najpierw pokazać podgląd i poczekać na Twoją zgodę.
@@ -133,8 +133,22 @@ i z uwierzytelnianiem; ten serwer ma dostęp do Twojego konta sprzedawcy.
 Klucze AWS (IAM) nie są już potrzebne: Amazon od 2023 r. wymaga tylko LWA.
 Plik `.env` jest w `.gitignore`; nigdy go nie commituj.
 
-**Reklamy** to osobne Amazon Ads API (advertising.amazon.com/API) z osobną rejestracją.
-Po uzyskaniu dostępu uzupełnij `ADS_API_*` i zaimplementuj wywołania w `tools/advertising.py`.
+### Reklamy (Amazon Ads API)
+
+Reklamy to osobne Amazon Ads API z osobną rejestracją i osobnymi kluczami:
+
+1. W konsoli Login with Amazon (developer.amazon.com/loginwithamazon/console) utwórz
+   **Security Profile**. W *Web Settings* dodaj **Allowed Return URL** `https://www.amazon.de`.
+2. Złóż wniosek o dostęp na advertising.amazon.com/about-api (jako reklamodawca zarządzający
+   własnymi kampaniami), podając Client ID z kroku 1. Poczekaj na mail z akceptacją.
+3. Wpisz do `.env` `ADS_API_CLIENT_ID`, `ADS_API_CLIENT_SECRET` i `ADS_API_REGION=EU`.
+4. Uruchom `python -m amazon_mcp.ads_auth`: skrypt da link do zgody, zamieni kod z przekierowania
+   na refresh token, pokaże profile reklamowe (kraje) i zapisze `ADS_API_REFRESH_TOKEN`
+   oraz `ADS_API_PROFILE_ID` do `.env`.
+5. Zrestartuj Claude i wywołaj `server_status`: `missing_ads_api_credentials` powinno być puste.
+
+`list_ad_campaigns` zwraca kampanie Sponsored Products; wyniki (kliknięcia, koszt, sprzedaż, ACoS)
+dają `request_ad_report` + `get_ad_report`, bo Amazon generuje raporty asynchronicznie.
 
 ## Dodawanie kolejnych endpointów
 

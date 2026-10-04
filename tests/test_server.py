@@ -21,7 +21,7 @@ EXPECTED_TOOLS = {
     "list_financial_events", "get_order_financial_events",
     "estimate_fees",
     "list_feeds", "get_feed",
-    "list_ad_campaigns", "update_ad_campaign",
+    "list_ad_profiles", "list_ad_campaigns", "update_ad_campaign", "request_ad_report", "get_ad_report",
 }
 
 
