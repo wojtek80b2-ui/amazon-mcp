@@ -102,10 +102,14 @@ claude mcp add amazon-seller -- /sciezka/do/amazon-mcp/.venv/bin/python -m amazo
 python -m amazon_mcp --transport streamable-http --host 127.0.0.1 --port 8000
 ```
 
-Endpoint: `http://host:8000/mcp`. Na VPS wystaw go tylko przez HTTPS (reverse proxy)
-i z uwierzytelnianiem; ten serwer ma dostęp do Twojego konta sprzedawcy.
+Endpoint: `http://host:8000/mcp`. Na VPS wystaw go tylko przez HTTPS (reverse proxy);
+ten serwer ma dostęp do Twojego konta sprzedawcy. W trybie HTTP serwer wymaga tokenu:
+`MCP_TOKENS=nazwa:token,...` (token min. 32 znaki), bez niego nie wystartuje, a żądanie bez
+nagłówka `Authorization: Bearer <token>` dostaje 401. `GET /health` działa bez tokenu.
+`MCP_ALLOWED_HOSTS` (opcjonalnie) włącza sprawdzanie nagłówka Host. Tryb, host i port można też
+podać zmiennymi `MCP_TRANSPORT`, `MCP_HOST`, `MCP_PORT`.
 
-Obraz Dockera (`Dockerfile`) uruchamia serwer w tym trybie na `0.0.0.0:8000`, jako użytkownik bez uprawnień.
+Obraz Dockera (`Dockerfile`) uruchamia serwer w tym trybie na `0.0.0.0:8000`, jako użytkownik bez uprawnień, ze sprawdzaniem `/health`.
 Poświadczenia podaje się zmiennymi środowiska (np. `env_file` w compose); `.env` nie trafia do obrazu.
 
 ```bash
