@@ -8,6 +8,7 @@ dependencies = [
     "mcp>=2.2,<3",
     "python-amazon-sp-api>=2.1",
     "python-dotenv>=1.0",
+    "uvicorn>=0.30",
 ]
 
 [project.optional-dependencies]
