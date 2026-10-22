@@ -1,5 +1,6 @@
 """Uwierzytelnianie tokenem (Bearer) dla trybu HTTP na VPS.
 
+Token w nagłówku "Authorization: Bearer <token>" albo "X-MCP-Token: <token>".
 Tokeny są w zmiennej MCP_TOKENS w formacie "nazwa:token,nazwa:token", np.
 MCP_TOKENS=wojtek:abc123...,ola:def456...
 Każda osoba ma swój token: można go odebrać jednej osobie bez ruszania drugiej,
@@ -43,6 +44,11 @@ class BearerAuthMiddleware:
         scheme, _, token = header.partition(" ")
         if scheme.lower() != "bearer" or not token:
             return None
+        return self._user_for_token(token)
+
+    def _user_for_token(self, token: str) -> str | None:
+        if not token:
+            return None
         for known, user in self.tokens.items():
             if hmac.compare_digest(known.encode(), token.strip().encode()):
                 return user
@@ -55,7 +61,11 @@ class BearerAuthMiddleware:
             return await _respond(send, 200, {"status": "ok"})
 
         headers = dict(scope.get("headers") or [])
-        user = self._user_for(headers.get(b"authorization", b"").decode("latin-1"))
+        # Bramka Pomerium (tryb MCP) nie przekazuje własnego nagłówka Authorization,
+        # więc token od niej przychodzi w X-MCP-Token.
+        user = self._user_for(headers.get(b"authorization", b"").decode("latin-1")) or self._user_for_token(
+            headers.get(b"x-mcp-token", b"").decode("latin-1")
+        )
         if user is None:
             client = (scope.get("client") or ("?",))[0]
             log.warning("Odrzucono żądanie bez poprawnego tokenu z %s", client)
