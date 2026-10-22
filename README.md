@@ -105,6 +105,14 @@ python -m amazon_mcp --transport streamable-http --host 127.0.0.1 --port 8000
 Endpoint: `http://host:8000/mcp`. Na VPS wystaw go tylko przez HTTPS (reverse proxy)
 i z uwierzytelnianiem; ten serwer ma dostęp do Twojego konta sprzedawcy.
 
+Obraz Dockera (`Dockerfile`) uruchamia serwer w tym trybie na `0.0.0.0:8000`, jako użytkownik bez uprawnień.
+Poświadczenia podaje się zmiennymi środowiska (np. `env_file` w compose); `.env` nie trafia do obrazu.
+
+```bash
+docker build -t amazon-mcp .
+docker run --rm --env-file /sciezka/poza/repo/amazon.env -p 127.0.0.1:8000:8000 amazon-mcp
+```
+
 ## Dodanie poświadczeń Amazon (gdy je będziesz mieć)
 
 1. **Konto deweloperskie**: Seller Central → *Apps and Services* → *Develop Apps* → zarejestruj się
