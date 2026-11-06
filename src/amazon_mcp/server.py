@@ -21,7 +21,9 @@ Serwer daje dostęp do konta sprzedawcy Amazon (Seller Central) przez Selling Pa
 - delete_listing jest nieodwracalne: zawsze najpierw podgląd bez confirm i wyraźna zgoda użytkownika.
 - Parametr marketplace to kod kraju (PL, DE, FR, ...); domyślny jest ustawiony w .env.
 - Reklamy (Amazon Ads API): list_ad_campaigns daje kampanie, a wyniki i ACoS dają
-  request_ad_report + get_ad_report (raport tworzy się asynchronicznie).
+  request_ad_report + get_ad_report (raport tworzy się asynchronicznie). Parametr country
+  (DE, PL, FR, IT, ES, NL, SE, UK, TR albo profileId) wybiera kraj; bez niego domyślny profil (DE).
+  Raport placements dzieli wyniki na miejsca wyświetlania, time_unit=DAILY daje wiersz na dzień.
 - Odpowiedzi z next_token są stronicowane: przekaż token w kolejnym wywołaniu.
 """
 

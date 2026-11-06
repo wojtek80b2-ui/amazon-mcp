@@ -6,6 +6,7 @@ import json
 
 import httpx
 import pytest
+from mcp.server.mcpserver.exceptions import ToolError
 
 import amazon_mcp.tools.advertising as advertising
 from amazon_mcp.ads_auth import consent_url, extract_code, set_env_value
@@ -90,8 +91,36 @@ def test_report_download_and_acos(requests):
     assert rows[0]["acos"] == 25.0 and rows[1]["acos"] is None
 
 
+def test_country_resolves_profile(requests):
+    advertising._profiles_by_country.clear()
+    call("list_ad_campaigns", {"country": "de"})
+    profiles_req, api_req = requests[1:]
+    assert profiles_req.url.path == "/v2/profiles"
+    assert api_req.headers["Amazon-Advertising-API-Scope"] == "111"
+    call("list_ad_campaigns", {"country": "999"})
+    assert requests[-1].headers["Amazon-Advertising-API-Scope"] == "999"
+    assert len(requests) == 4  # profil liczbowy nie pobiera /v2/profiles ponownie
+    with pytest.raises(ToolError, match="Brak profilu reklamowego seller dla kraju 'XX'"):
+        call("list_ad_campaigns", {"country": "XX"})
+
+
+def test_report_placements_daily(requests):
+    call("request_ad_report", {"start_date": "2026-10-01", "end_date": "2026-10-31",
+                               "report": "placements", "time_unit": "daily"})
+    cfg = json.loads(requests[-1].content)["configuration"]
+    assert cfg["reportTypeId"] == "spCampaigns"
+    assert cfg["groupBy"] == ["campaign", "campaignPlacement"]
+    assert cfg["timeUnit"] == "DAILY"
+    assert cfg["columns"][:2] == ["date", "campaignId"] and "placementClassification" in cfg["columns"]
+    call("request_ad_report", {"start_date": "2026-10-01", "end_date": "2026-10-31"})
+    cfg = json.loads(requests[-1].content)["configuration"]
+    assert cfg["timeUnit"] == "SUMMARY" and "date" not in cfg["columns"]
+    with pytest.raises(ToolError, match="Nieznany time_unit"):
+        call("request_ad_report", {"start_date": "2026-10-01", "end_date": "2026-10-31", "time_unit": "WEEKLY"})
+
+
 def test_missing_ads_credentials():
-    client = AdsClient(Settings(mode="live", ads_client_id="x"))
+    client = AdsClient(Settings(mode="live", ads_client_id="x", ads_client_secret="", ads_refresh_token=""))
     with pytest.raises(Exception, match="ADS_API_REFRESH_TOKEN"):
         client.request("GET", "/v2/profiles", profile_scope=False)
 

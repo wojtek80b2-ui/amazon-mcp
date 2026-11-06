@@ -33,11 +33,40 @@ REPORTS = {
     "products": {"reportTypeId": "spAdvertisedProduct", "groupBy": ["advertiser"],
                  "columns": ["campaignName", "adGroupName", "advertisedAsin", "advertisedSku",
                              "impressions", "clicks", "cost", "sales7d", "purchases7d"]},
+    # Podział na miejsca wyświetlania (góra wyszukiwania / reszta wyszukiwania / strona produktu).
+    "placements": {"reportTypeId": "spCampaigns", "groupBy": ["campaign", "campaignPlacement"],
+                   "columns": ["campaignId", "campaignName", "placementClassification",
+                               "impressions", "clicks", "cost", "sales7d", "purchases7d"]},
 }
+
+TIME_UNITS = ("SUMMARY", "DAILY")
+
+# Pamięć podręczna: kod kraju -> profileId (z /v2/profiles), tylko w trybie live.
+_profiles_by_country: dict[str, str] = {}
 
 
 def _live() -> bool:
     return not spapi.cfg.is_mock
+
+
+def _profile(country: str | None) -> str | None:
+    """Zamienia kod kraju (DE, PL, FR...) na profileId. Liczba przechodzi bez zmian. None = ADS_API_PROFILE_ID."""
+    if not country:
+        return None
+    country = country.strip()
+    if country.isdigit():
+        return country
+    code = country.upper()
+    if not _profiles_by_country:
+        for prof in ads.request("GET", "/v2/profiles", profile_scope=False):
+            cc = str(prof.get("countryCode", "")).upper()
+            is_seller = (prof.get("accountInfo") or {}).get("type", "seller") == "seller"
+            if cc and (is_seller or cc not in _profiles_by_country):  # seller ma pierwszeństwo przed vendor
+                _profiles_by_country[cc] = str(prof["profileId"])
+    if code not in _profiles_by_country:
+        raise AmazonAPIError(f"Brak profilu reklamowego seller dla kraju '{code}'. "
+                             f"Dostępne: {', '.join(sorted(_profiles_by_country))}")
+    return _profiles_by_country[code]
 
 
 def _with_acos(rows: list[dict]) -> list[dict]:
@@ -56,11 +85,13 @@ def register(mcp) -> None:
         return {"mode": "live", "payload": ads.request("GET", "/v2/profiles", profile_scope=False)}
 
     @mcp.tool(annotations=READ_ONLY)
-    def list_ad_campaigns(state: str | None = None, next_token: str | None = None) -> dict:
+    def list_ad_campaigns(state: str | None = None, next_token: str | None = None,
+                          country: str | None = None) -> dict:
         """Kampanie Sponsored Products (nazwa, stan, budżet, targetowanie).
 
-        state: ENABLED, PAUSED, ARCHIVED. Wyniki (kliknięcia, koszt, ACoS) w trybie live daje
-        request_ad_report(report="campaigns").
+        state: ENABLED, PAUSED, ARCHIVED. country: kod kraju (DE, PL, FR, IT, ES, NL, SE, UK, TR)
+        albo profileId; bez niego domyślny profil z .env. Wyniki (kliknięcia, koszt, ACoS) w trybie
+        live daje request_ad_report(report="campaigns").
         """
         if not _live():
             campaigns = [c for c in mock_data.AD_CAMPAIGNS if not state or c["state"] == state.upper()]
@@ -70,7 +101,8 @@ def register(mcp) -> None:
             body["stateFilter"] = {"include": [state.upper()]}
         if next_token:
             body["nextToken"] = next_token
-        data = ads.request("POST", "/sp/campaigns/list", json=body, media_type=SP_CAMPAIGN_MEDIA_TYPE)
+        data = ads.request("POST", "/sp/campaigns/list", json=body, media_type=SP_CAMPAIGN_MEDIA_TYPE,
+                           profile_id=_profile(country))
         result = {"mode": "live", "payload": {"campaigns": data.get("campaigns", [])}}
         if data.get("nextToken"):
             result["next_token"] = data["nextToken"]
@@ -82,8 +114,12 @@ def register(mcp) -> None:
         state: str | None = None,
         daily_budget: float | None = None,
         confirm: bool = False,
+        country: str | None = None,
     ) -> dict:
-        """Zmień stan (ENABLED/PAUSED) lub dzienny budżet kampanii. Bez confirm=true tylko podgląd."""
+        """Zmień stan (ENABLED/PAUSED) lub dzienny budżet kampanii. Bez confirm=true tylko podgląd.
+
+        country: kod kraju albo profileId kampanii (domyślnie profil z .env).
+        """
         changes: dict = {"campaignId": campaign_id}
         if state:
             changes["state"] = state.upper()
@@ -94,7 +130,7 @@ def register(mcp) -> None:
             if not _live():
                 return {"mode": "mock", "payload": {"code": "SUCCESS", **changes}}
             data = ads.request("PUT", "/sp/campaigns", json={"campaigns": [changes]},
-                               media_type=SP_CAMPAIGN_MEDIA_TYPE)
+                               media_type=SP_CAMPAIGN_MEDIA_TYPE, profile_id=_profile(country))
             errors = (data.get("campaigns") or {}).get("error") or []
             if errors:
                 raise AmazonAPIError(f"Ads API odrzuciło zmianę: {errors}")
@@ -103,37 +139,53 @@ def register(mcp) -> None:
         return guarded_write(confirm, f"Zmiana kampanii {campaign_id}", changes, execute)
 
     @mcp.tool(annotations=READ_ONLY)
-    def request_ad_report(start_date: str, end_date: str, report: str = "campaigns") -> dict:
+    def request_ad_report(start_date: str, end_date: str, report: str = "campaigns",
+                          time_unit: str = "SUMMARY", country: str | None = None) -> dict:
         """Zamów raport wyników Sponsored Products (wyświetlenia, kliknięcia, koszt, sprzedaż 7d).
 
-        report: campaigns, search_terms, targeting, products. Daty YYYY-MM-DD (maks. 31 dni, do 95 dni wstecz).
-        Raport generuje się asynchronicznie: zwraca report_id do get_ad_report.
+        report: campaigns, search_terms, targeting, products, placements (kampania x miejsce wyświetlania:
+        góra wyszukiwania / reszta wyszukiwania / strona produktu).
+        time_unit: SUMMARY (suma za okres) albo DAILY (wiersz na dzień, kolumna date).
+        country: kod kraju (DE, PL, FR...) albo profileId; domyślnie profil z .env. Ten sam country
+        podaj potem w get_ad_report.
+        Daty YYYY-MM-DD (maks. 31 dni, do 95 dni wstecz). Raport generuje się asynchronicznie:
+        zwraca report_id do get_ad_report.
         """
         if report not in REPORTS:
             raise AmazonAPIError(f"Nieznany raport '{report}'. Dostępne: {', '.join(REPORTS)}")
+        time_unit = time_unit.upper()
+        if time_unit not in TIME_UNITS:
+            raise AmazonAPIError(f"Nieznany time_unit '{time_unit}'. Dostępne: {', '.join(TIME_UNITS)}")
         if not _live():
             return {"mode": "mock", "payload": {"reportId": "mock-report-1", "status": "PENDING"}}
         spec = REPORTS[report]
+        columns = list(spec["columns"])
+        if time_unit == "DAILY":
+            columns = ["date", *columns]  # Amazon wymaga kolumny date przy DAILY
         body = {
-            "name": f"amazon-mcp {report} {start_date}..{end_date}",
+            "name": f"amazon-mcp {report} {time_unit} {start_date}..{end_date}",
             "startDate": start_date,
             "endDate": end_date,
             "configuration": {"adProduct": "SPONSORED_PRODUCTS", "groupBy": spec["groupBy"],
-                              "columns": spec["columns"], "reportTypeId": spec["reportTypeId"],
-                              "timeUnit": "SUMMARY", "format": "GZIP_JSON"},
+                              "columns": columns, "reportTypeId": spec["reportTypeId"],
+                              "timeUnit": time_unit, "format": "GZIP_JSON"},
         }
         return {"mode": "live", "payload": ads.request("POST", "/reporting/reports", json=body,
-                                                        media_type=REPORT_MEDIA_TYPE)}
+                                                        media_type=REPORT_MEDIA_TYPE,
+                                                        profile_id=_profile(country))}
 
     @mcp.tool(annotations=READ_ONLY)
-    def get_ad_report(report_id: str, max_rows: int = 200) -> dict:
-        """Status i wiersze raportu z request_ad_report (z wyliczonym ACoS %). Gdy status PENDING, spróbuj za chwilę."""
+    def get_ad_report(report_id: str, max_rows: int = 200, country: str | None = None) -> dict:
+        """Status i wiersze raportu z request_ad_report (z wyliczonym ACoS %). Gdy status PENDING, spróbuj za chwilę.
+
+        country: ten sam kod kraju / profileId, który podano w request_ad_report.
+        """
         if not _live():
             rows = [{"campaignName": c["name"], "impressions": c["metrics"]["impressions"],
                      "clicks": c["metrics"]["clicks"], "cost": c["metrics"]["cost"],
                      "sales7d": c["metrics"]["sales"]} for c in mock_data.AD_CAMPAIGNS]
             return {"mode": "mock", "payload": {"status": "COMPLETED", "rows": _with_acos(rows)}}
-        meta = ads.request("GET", f"/reporting/reports/{report_id}")
+        meta = ads.request("GET", f"/reporting/reports/{report_id}", profile_id=_profile(country))
         if meta.get("status") != "COMPLETED" or not meta.get("url"):
             return {"mode": "live", "payload": meta}
         raw = httpx.get(meta["url"], timeout=60).content

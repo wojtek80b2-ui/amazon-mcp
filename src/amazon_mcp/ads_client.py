@@ -73,8 +73,10 @@ class AdsClient:
         return self._token
 
     def request(self, method: str, path: str, *, json: Any = None, params: dict | None = None,
-                media_type: str | None = None, profile_scope: bool = True) -> Any:
-        missing = self.missing_credentials(need_profile=profile_scope)
+                media_type: str | None = None, profile_scope: bool = True,
+                profile_id: str | None = None) -> Any:
+        """profile_id nadpisuje ADS_API_PROFILE_ID (konto reklamowe innego kraju)."""
+        missing = self.missing_credentials(need_profile=profile_scope and not profile_id)
         if missing:
             raise AmazonAPIError("Ads API: brakuje w .env: " + ", ".join(missing))
 
@@ -83,7 +85,7 @@ class AdsClient:
             "Amazon-Advertising-API-ClientId": self.cfg.ads_client_id,
         }
         if profile_scope:
-            headers["Amazon-Advertising-API-Scope"] = self.cfg.ads_profile_id
+            headers["Amazon-Advertising-API-Scope"] = str(profile_id or self.cfg.ads_profile_id)
         if media_type:
             headers["Content-Type"] = media_type
             headers["Accept"] = media_type
