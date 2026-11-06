@@ -11,12 +11,14 @@ if (-not (git remote | Select-String -Quiet '^origin$')) {
 }
 git push origin "${Galaz}:${Galaz}"
 if ($LASTEXITCODE -ne 0) { throw "git push nie powiodl sie" }
-ssh vps4l "bash /home/debian/mcp/amazon-mcp/deploy/vps/aktualizuj.sh $Galaz"
+# Skrypty bierzemy z GitHuba (git show), bo na VPS moze byc jeszcze stara galaz bez deploy/vps.
+$repoVps = "/home/debian/mcp/amazon-mcp"
+ssh vps4l "cd $repoVps && GIT_TERMINAL_PROMPT=0 git fetch -q origin && git show origin/${Galaz}:deploy/vps/aktualizuj.sh | bash -s -- $Galaz"
 if ($LASTEXITCODE -ne 0) { throw "aktualizacja na VPS nie powiodla sie (patrz wyzej)" }
 if ($Ads) {
     $linie = Select-String -Path "$repo\.env" -Pattern '^ADS_API_(REFRESH_TOKEN|PROFILE_ID|REGION)=' | ForEach-Object { $_.Line }
     if (-not $linie) { throw "Brak ADS_API_* w $repo\.env. Najpierw: python -m amazon_mcp.ads_auth" }
-    ($linie -join "`n") | ssh vps4l "bash /home/debian/mcp/amazon-mcp/deploy/vps/ustaw-ads.sh"
+    ($linie -join "`n") | ssh vps4l "bash $repoVps/deploy/vps/ustaw-ads.sh"
     if ($LASTEXITCODE -ne 0) { throw "ustawienie danych Ads na VPS nie powiodlo sie" }
 }
 Write-Host "Gotowe."
