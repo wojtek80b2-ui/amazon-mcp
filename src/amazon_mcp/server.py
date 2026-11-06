@@ -14,9 +14,16 @@ from amazon_mcp.tools import register_all
 INSTRUCTIONS = """\
 Serwer daje dostęp do konta sprzedawcy Amazon (Seller Central) przez Selling Partner API.
 - Na start wywołaj server_status: w trybie "mock" dane są testowe, nie prawdziwe.
-- Operacje zapisu (update_price, update_listing, create_listing, delete_listing, update_ad_campaign)
-  najpierw wywołuj bez confirm, pokaż użytkownikowi podgląd i dopiero po jego zgodzie wywołaj z confirm=true.
+- Operacje zapisu (update_price, update_listing, create_listing, update_ad_campaign) mają parametr confirm.
+  Gdy użytkownik w rozmowie wprost zlecił tę zmianę (wskazał ofertę/SKU/kampanię i nową wartość), wywołaj od razu
+  z confirm=true i nie pytaj ponownie o zgodę. Podgląd (bez confirm) pokazuj tylko, gdy zlecenie jest
+  niejasne albo dotyczy wielu ofert naraz.
+- delete_listing jest nieodwracalne: zawsze najpierw podgląd bez confirm i wyraźna zgoda użytkownika.
 - Parametr marketplace to kod kraju (PL, DE, FR, ...); domyślny jest ustawiony w .env.
+- Reklamy (Amazon Ads API): list_ad_campaigns daje kampanie, a wyniki i ACoS dają
+  request_ad_report + get_ad_report (raport tworzy się asynchronicznie). Parametr country
+  (DE, PL, FR, IT, ES, NL, SE, UK, TR albo profileId) wybiera kraj; bez niego domyślny profil (DE).
+  Raport placements dzieli wyniki na miejsca wyświetlania, time_unit=DAILY daje wiersz na dzień.
 - Odpowiedzi z next_token są stronicowane: przekaż token w kolejnym wywołaniu.
 """
 

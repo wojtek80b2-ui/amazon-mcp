@@ -14,10 +14,15 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from amazon_mcp.config import Settings, settings as default_settings
+from mcp.server.mcpserver.exceptions import ToolError
 
 
-class AmazonAPIError(RuntimeError):
-    """Błąd zwrócony przez SP-API, w formie czytelnej dla Claude."""
+class AmazonAPIError(ToolError, RuntimeError):
+    """Błąd zwrócony przez SP-API, w formie czytelnej dla Claude.
+
+    Dziedziczy po ToolError: SDK mcp>=2.2 przekazuje klientowi tylko treść ToolError,
+    każdy inny wyjątek ukrywa jako ogólne "Error executing tool".
+    """
 
 
 class WriteBlockedError(RuntimeError):
