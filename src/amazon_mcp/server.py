@@ -14,16 +14,21 @@ from amazon_mcp.tools import register_all
 INSTRUCTIONS = """\
 Serwer daje dostęp do konta sprzedawcy Amazon (Seller Central) przez Selling Partner API.
 - Na start wywołaj server_status: w trybie "mock" dane są testowe, nie prawdziwe.
-- Operacje zapisu (update_price, update_listing, create_listing, update_ad_campaign) mają parametr confirm.
+- Operacje zapisu (update_price, update_listing, create_listing, update_ad_campaign, update_ad_bids,
+  add_ad_negatives, remove_ad_negatives, add_ad_keywords, update_ad_placements) mają parametr confirm.
   Gdy użytkownik w rozmowie wprost zlecił tę zmianę (wskazał ofertę/SKU/kampanię i nową wartość), wywołaj od razu
   z confirm=true i nie pytaj ponownie o zgodę. Podgląd (bez confirm) pokazuj tylko, gdy zlecenie jest
-  niejasne albo dotyczy wielu ofert naraz.
+  niejasne albo dotyczy wielu ofert naraz. Zmiany w reklamach obejmujące więcej niż jedną pozycję (lista
+  stawek, negatywów, słów) zawsze najpierw jako podgląd przed → po i dopiero po zgodzie z confirm=true.
 - delete_listing jest nieodwracalne: zawsze najpierw podgląd bez confirm i wyraźna zgoda użytkownika.
 - Parametr marketplace to kod kraju (PL, DE, FR, ...); domyślny jest ustawiony w .env.
 - Reklamy (Amazon Ads API): list_ad_campaigns daje kampanie, a wyniki i ACoS dają
   request_ad_report + get_ad_report (raport tworzy się asynchronicznie). Parametr country
   (DE, PL, FR, IT, ES, NL, SE, UK, TR albo profileId) wybiera kraj; bez niego domyślny profil (DE).
   Raport placements dzieli wyniki na miejsca wyświetlania, time_unit=DAILY daje wiersz na dzień.
+- Zarządzanie reklamami: list_ad_groups / list_ad_keywords / list_ad_targets / list_ad_negatives dają ID;
+  update_ad_bids (stawki i stan), add_ad_negatives / remove_ad_negatives, add_ad_keywords (harvest do exact),
+  update_ad_placements. Podgląd pokazuje stan przed → po; każda wykonana zmiana trafia do list_ad_changes.
 - Odpowiedzi z next_token są stronicowane: przekaż token w kolejnym wywołaniu.
 """
 

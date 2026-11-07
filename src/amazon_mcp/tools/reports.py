@@ -32,8 +32,13 @@ def register(mcp) -> None:
         start_time: str | None = None,
         end_time: str | None = None,
         marketplace: str | None = None,
+        report_options: dict | None = None,
     ) -> dict:
         """Zleć wygenerowanie raportu. Zwraca reportId; status sprawdzisz narzędziem get_report.
+
+        report_options: dodatkowe opcje raportu, np. dla SQP (GET_BRAND_ANALYTICS_SEARCH_QUERY_PERFORMANCE_REPORT)
+        {"reportPeriod": "WEEK", "asin": "B0... B0..."} (ASIN-y spacją, maks. 200 znaków; WEEK = niedziela–sobota),
+        dla GET_SALES_AND_TRAFFIC_REPORT {"dateGranularity": "DAY", "asinGranularity": "CHILD"}.
 
         Popularne typy: GET_MERCHANT_LISTINGS_ALL_DATA, GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL,
         GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA, GET_SALES_AND_TRAFFIC_REPORT,
@@ -44,6 +49,8 @@ def register(mcp) -> None:
             body["dataStartTime"] = start_time
         if end_time:
             body["dataEndTime"] = end_time
+        if report_options:
+            body["reportOptions"] = {k: str(v) for k, v in report_options.items()}
         return spapi.call("Reports", "create_report", marketplace=marketplace,
                           mock={"reportId": "50003"}, **body)
 

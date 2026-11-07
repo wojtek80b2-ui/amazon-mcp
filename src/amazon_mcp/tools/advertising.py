@@ -12,7 +12,7 @@ import json
 
 import httpx
 
-from amazon_mcp import mock_data
+from amazon_mcp import ads_log, mock_data
 from amazon_mcp.ads_client import SP_CAMPAIGN_MEDIA_TYPE, ads
 from amazon_mcp.client import AmazonAPIError, spapi
 from amazon_mcp.tools._common import READ_ONLY, WRITE, guarded_write
@@ -129,12 +129,14 @@ def register(mcp) -> None:
         def execute():
             if not _live():
                 return {"mode": "mock", "payload": {"code": "SUCCESS", **changes}}
+            profile_id = _profile(country)
             data = ads.request("PUT", "/sp/campaigns", json={"campaigns": [changes]},
-                               media_type=SP_CAMPAIGN_MEDIA_TYPE, profile_id=_profile(country))
+                               media_type=SP_CAMPAIGN_MEDIA_TYPE, profile_id=profile_id)
             errors = (data.get("campaigns") or {}).get("error") or []
+            log = ads_log.log_change("update_ad_campaign", profile_id, [changes], {"errors": errors})
             if errors:
                 raise AmazonAPIError(f"Ads API odrzuciło zmianę: {errors}")
-            return {"mode": "live", "payload": data}
+            return {"mode": "live", "payload": data, "change_log": log}
 
         return guarded_write(confirm, f"Zmiana kampanii {campaign_id}", changes, execute)
 
