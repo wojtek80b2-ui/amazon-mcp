@@ -45,7 +45,16 @@ def read_changes(limit: int = 50, contains: str | None = None) -> list[dict[str,
     path = log_path()
     if not path.exists():
         return []
+    limit = max(1, min(int(limit or 50), 500))
     lines = path.read_text(encoding="utf-8").splitlines()
     if contains:
         lines = [line for line in lines if contains.lower() in line.lower()]
-    return [json.loads(line) for line in lines[-limit:]][::-1]
+    out = []
+    for line in reversed(lines):
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            out.append({"broken_line": line[:200]})
+        if len(out) >= limit:
+            break
+    return out

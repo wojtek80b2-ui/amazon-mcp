@@ -31,7 +31,13 @@ def api(monkeypatch, tmp_path):
     import amazon_mcp.tools._common as common
 
     monkeypatch.setenv("ADS_CHANGE_LOG", str(tmp_path / "log.jsonl"))
-    seen = []
+    seen = Seen()
+    state = {"fail_path": None, "item_error": None}
+    allowed_filters = {
+        "keywords": "keywordIdFilter", "targets": "targetIdFilter",
+        "negativeKeywords": "negativeKeywordIdFilter", "campaignNegativeKeywords": "campaignNegativeKeywordIdFilter",
+        "negativeTargets": "negativeTargetIdFilter", "campaignNegativeTargets": "campaignNegativeTargetIdFilter",
+    }
 
     def ok(key, ids):
         return httpx.Response(207, json={key: {"success": [{"index": i, "id": x} for i, x in enumerate(ids)],
@@ -43,18 +49,32 @@ def api(monkeypatch, tmp_path):
         if path == "/auth/o2/token":
             return httpx.Response(200, json={"access_token": "Atza|tok", "expires_in": 3600})
         body = json.loads(request.content or b"{}")
+        resource = path.split("/")[2] if path.startswith("/sp/") else ""
+        for field in body:
+            if field.endswith("IdFilter") and field not in ("campaignIdFilter", "adGroupIdFilter") \
+                    and field != allowed_filters.get(resource):
+                return httpx.Response(400, json={"message": f"zły filtr {field} dla {resource}"})
+        if state["fail_path"] == path:
+            return httpx.Response(500, json={"message": "awaria"})
+        if state["item_error"] == path:
+            key = next(iter(body))
+            return httpx.Response(207, json={key: {"success": [], "error": [{"index": 0, "errors": ["zła stawka"]}]}})
         if path == "/v2/profiles":
-            return httpx.Response(200, json=[{"profileId": 111, "countryCode": "DE", "accountInfo": {"type": "seller"}},
-                                             {"profileId": 333, "countryCode": "FR", "accountInfo": {"type": "seller"}}])
+            return httpx.Response(200, json=[
+                {"profileId": 111, "countryCode": "DE", "currencyCode": "EUR", "accountInfo": {"type": "seller"}},
+                {"profileId": 333, "countryCode": "FR", "currencyCode": "EUR", "accountInfo": {"type": "seller"}},
+                {"profileId": 444, "countryCode": "PL", "currencyCode": "PLN", "accountInfo": {"type": "seller"}}])
         if path == "/sp/keywords/list":
-            return httpx.Response(200, json={"keywords": [KEYWORD]})
+            wanted = (body.get("keywordIdFilter") or {}).get("include")
+            return httpx.Response(200, json={"keywords": [k for k in [KEYWORD] if not wanted or k["keywordId"] in wanted]})
         if path == "/sp/targets/list":
             return httpx.Response(200, json={"targetingClauses": [
                 {"targetId": "t1", "expression": [{"type": "ASIN_SAME_AS", "value": "B0EXIST"}],
                  "bid": 0.4, "state": "ENABLED"}]})
         if path == "/sp/negativeKeywords/list":
-            return httpx.Response(200, json={"negativeKeywords": [
-                {"keywordId": "n1", "keywordText": "Zubehör", "matchType": "NEGATIVE_EXACT", "state": "ENABLED"}]})
+            neg = [{"keywordId": "n1", "keywordText": "Zubehör", "matchType": "NEGATIVE_EXACT", "state": "ENABLED"}]
+            wanted = (body.get("negativeKeywordIdFilter") or {}).get("include")
+            return httpx.Response(200, json={"negativeKeywords": [n for n in neg if not wanted or n["keywordId"] in wanted]})
         if path in ("/sp/negativeTargets/list", "/sp/campaignNegativeKeywords/list",
                     "/sp/campaignNegativeTargets/list"):
             return httpx.Response(200, json={})
@@ -68,11 +88,17 @@ def api(monkeypatch, tmp_path):
 
     transport = httpx.MockTransport(handler)
     advertising._profiles_by_country.clear()
+    advertising._currency_by_profile.clear()
     monkeypatch.setattr(advertising, "ads", AdsClient(LIVE, transport=transport))
     live = SPAPIClient(LIVE)
     monkeypatch.setattr(client_module.spapi, "cfg", live.cfg)
     monkeypatch.setattr(common.spapi, "cfg", live.cfg)
+    seen.state = state
     return seen
+
+
+class Seen(list):
+    pass
 
 
 def call(tool, args):
@@ -109,7 +135,7 @@ def test_bids_preview_then_execute_with_log(api):
 def test_bids_warn_and_validate(api):
     preview = call("update_ad_bids", {"changes": [{"keyword_id": "k1", "bid": 1.5}]})
     assert "ponad 2×" in preview["request"]["changes"][0]["warning"]
-    with pytest.raises(ToolError, match="poniżej minimum"):
+    with pytest.raises(ToolError, match="poniżej minimum 0.02 EUR"):
         call("update_ad_bids", {"changes": [{"keyword_id": "k1", "bid": 0.01}]})
     with pytest.raises(ToolError, match="ENABLED albo PAUSED"):
         call("update_ad_bids", {"changes": [{"target_id": "t1", "state": "ARCHIVED"}]})
@@ -152,7 +178,7 @@ def test_remove_negatives(api):
     call("remove_ad_negatives", {"negative_ids": ["n1"], "confirm": True})
     post = writes(api)[-1]
     assert post.url.path == "/sp/negativeKeywords/delete"
-    assert json.loads(post.content) == {"keywordIdFilter": {"include": ["n1"]}}
+    assert json.loads(post.content) == {"negativeKeywordIdFilter": {"include": ["n1"]}}
 
 
 def test_add_keywords_harvest(api):
@@ -198,3 +224,69 @@ def test_report_options_passed(monkeypatch):
     call("create_report", {"report_type": "GET_BRAND_ANALYTICS_SEARCH_QUERY_PERFORMANCE_REPORT",
                            "report_options": {"reportPeriod": "WEEK", "asin": "B0A B0B"}})
     assert captured["reportOptions"] == {"reportPeriod": "WEEK", "asin": "B0A B0B"}
+
+
+def test_remove_unknown_negative_blocked(api):
+    with pytest.raises(ToolError, match="nie istnieją"):
+        call("remove_ad_negatives", {"negative_ids": ["n999"]})
+    assert writes(api) == []
+
+
+def test_bid_safety_cap_and_jump(api):
+    with pytest.raises(ToolError, match="powyżej bezpiecznika 5"):
+        call("update_ad_bids", {"changes": [{"keyword_id": "k1", "bid": 45}]})
+    with pytest.raises(ToolError, match="ponad 3× obecnej"):
+        call("update_ad_bids", {"changes": [{"keyword_id": "k1", "bid": 1.6}]})
+    ok = call("update_ad_bids", {"changes": [{"keyword_id": "k1", "bid": 1.6}], "allow_big_change": True})
+    assert ok["status"] == "preview" and ok["request"]["changes"][0]["currency"] == "EUR"
+    with pytest.raises(ToolError, match="powyżej bezpiecznika"):
+        call("add_ad_keywords", {"campaign_id": "c1", "ad_group_id": "g1",
+                                 "keywords": [{"text": "neu", "match_type": "EXACT", "bid": 45}]})
+
+
+def test_bid_cap_in_profile_currency(api):
+    preview = call("update_ad_bids", {"changes": [{"keyword_id": "k1", "bid": 1.2}], "country": "PL"})
+    assert preview["request"]["changes"][0]["currency"] == "PLN"
+
+
+def test_unknown_id_blocks_write(api):
+    with pytest.raises(ToolError, match="ID nie istnieją"):
+        call("update_ad_bids", {"changes": [{"keyword_id": "k999", "bid": 0.5}]})
+    assert writes(api) == []
+
+
+def test_item_errors_give_failed_status_and_log(api):
+    api.state["item_error"] = "/sp/keywords"
+    r = call("update_ad_bids", {"changes": [{"keyword_id": "k1", "bid": 0.6}], "confirm": True})
+    assert r["status"] == "failed" and r["payload"]["errors"]
+    assert call("list_ad_changes", {})["changes"][0]["result"]["status"] == "failed"
+
+
+def test_exception_midway_is_logged_as_partial(api):
+    api.state["fail_path"] = "/sp/targets"
+    r = call("add_ad_keywords", {"campaign_id": "c1", "ad_group_id": "g1",
+                                 "keywords": [{"text": "neu", "match_type": "EXACT", "bid": 0.5}],
+                                 "asins": [{"asin": "B0NEU", "bid": 0.3}], "confirm": True})
+    assert r["status"] == "partial"
+    assert r["payload"]["success"] == {"keywords": 1}
+    assert "awaria" in r["payload"]["errors"][0]["exception"]
+    entry = call("list_ad_changes", {})["changes"][0]
+    assert entry["action"] == "add_ad_keywords" and entry["profile_id"] == "111"
+
+
+def test_placements_keep_shopper_cohorts(api, monkeypatch):
+    cohorts = [{"percentage": 30, "shopperCohortType": "AUDIENCE_SEGMENT", "audienceSegments": []}]
+    monkeypatch.setitem(CAMPAIGN["dynamicBidding"], "shopperCohortBidding", cohorts)
+    call("update_ad_placements", {"campaign_id": "c1", "product_page": 10, "confirm": True})
+    body = json.loads(writes(api)[-1].content)
+    assert body["campaigns"][0]["dynamicBidding"]["shopperCohortBidding"] == cohorts
+
+
+def test_change_log_limit_and_broken_lines(api, tmp_path):
+    from amazon_mcp import ads_log
+    path = ads_log.log_path()
+    path.write_text('{"action": "a"}\nnie-json\n{"action": "b"}\n', encoding="utf-8")
+    assert call("list_ad_changes", {"limit": 1})["changes"] == [{"action": "b"}]
+    assert len(call("list_ad_changes", {"limit": 0})["changes"]) == 3  # 0 = domyślne 50, nie „cały plik”
+    changes = call("list_ad_changes", {"limit": 5})["changes"]
+    assert changes[1] == {"broken_line": "nie-json"} and len(changes) == 3

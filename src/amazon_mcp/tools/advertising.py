@@ -41,8 +41,29 @@ REPORTS = {
 
 TIME_UNITS = ("SUMMARY", "DAILY")
 
-# Pamięć podręczna: kod kraju -> profileId (z /v2/profiles), tylko w trybie live.
+# Pamięć podręczna z /v2/profiles (tylko tryb live): kod kraju -> profileId, profileId -> waluta.
 _profiles_by_country: dict[str, str] = {}
+_currency_by_profile: dict[str, str] = {}
+
+
+def _load_profiles() -> None:
+    if _profiles_by_country:
+        return
+    for prof in ads.request("GET", "/v2/profiles", profile_scope=False):
+        pid = str(prof["profileId"])
+        _currency_by_profile[pid] = str(prof.get("currencyCode") or "")
+        cc = str(prof.get("countryCode", "")).upper()
+        is_seller = (prof.get("accountInfo") or {}).get("type", "seller") == "seller"
+        if cc and (is_seller or cc not in _profiles_by_country):  # seller ma pierwszeństwo przed vendor
+            _profiles_by_country[cc] = pid
+
+
+def profile_currency(profile_id: str | None) -> str:
+    """Waluta profilu (EUR, PLN, SEK, GBP, TRY...); pusty napis, gdy nieznana."""
+    if not profile_id or not _live():
+        return ""
+    _load_profiles()
+    return _currency_by_profile.get(str(profile_id), "")
 
 
 def _live() -> bool:
@@ -57,12 +78,7 @@ def _profile(country: str | None) -> str | None:
     if country.isdigit():
         return country
     code = country.upper()
-    if not _profiles_by_country:
-        for prof in ads.request("GET", "/v2/profiles", profile_scope=False):
-            cc = str(prof.get("countryCode", "")).upper()
-            is_seller = (prof.get("accountInfo") or {}).get("type", "seller") == "seller"
-            if cc and (is_seller or cc not in _profiles_by_country):  # seller ma pierwszeństwo przed vendor
-                _profiles_by_country[cc] = str(prof["profileId"])
+    _load_profiles()
     if code not in _profiles_by_country:
         raise AmazonAPIError(f"Brak profilu reklamowego seller dla kraju '{code}'. "
                              f"Dostępne: {', '.join(sorted(_profiles_by_country))}")

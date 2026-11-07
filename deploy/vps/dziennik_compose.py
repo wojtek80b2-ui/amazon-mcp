@@ -31,8 +31,11 @@ def patch(text: str) -> str:
         raise SystemExit("Usługa amazon-mcp bez tmpfs: albo environment: — dopisz wolumen ręcznie")
     if any(line.startswith("    volumes:") for line in block):
         raise SystemExit("Usługa amazon-mcp ma już volumes: — dopisz wolumen ręcznie")
-    block.insert(env + 1, "      ADS_CHANGE_LOG: /dane/ads-changes.jsonl")
-    block[tmpfs + 1:tmpfs + 1] = ["    volumes:", "      - amazon_dziennik:/dane"]
+    # Wstawiamy od końca bloku, żeby pierwsze wstawienie nie przesunęło indeksu drugiego.
+    inserts = [(env + 1, ["      ADS_CHANGE_LOG: /dane/ads-changes.jsonl"]),
+               (tmpfs, ["    volumes:", "      - amazon_dziennik:/dane"])]  # volumes PRZED tmpfs
+    for idx, new_lines in sorted(inserts, key=lambda x: -x[0]):
+        block[idx:idx] = new_lines
     lines[start:end] = block
     try:
         top = lines.index("volumes:")

@@ -53,7 +53,10 @@ PLIK_COMPOSE=$KATALOG/docker-compose.mcp.yml
 if ! grep -q 'amazon_dziennik' "$PLIK_COMPOSE"; then
     KOPIA="$PLIK_COMPOSE.bak-$(date +%Y%m%d-%H%M%S)"
     cp -p "$PLIK_COMPOSE" "$KOPIA"
-    python3 "$REPO/deploy/vps/dziennik_compose.py" "$PLIK_COMPOSE"
+    if ! python3 "$REPO/deploy/vps/dziennik_compose.py" "$PLIK_COMPOSE"; then
+        cp -p "$KOPIA" "$PLIK_COMPOSE"
+        echo "Nie udało się dopisać wolumenu dziennika: compose bez zmian. Przerywam."; exit 1
+    fi
     if $COMPOSE config -q; then
         echo "Kopia compose sprzed zmiany: $KOPIA"
     else
