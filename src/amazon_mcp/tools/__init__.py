@@ -5,6 +5,7 @@ register(mcp) i dopisz go do listy MODULES poniżej.
 """
 
 from amazon_mcp.tools import (
+    ads_targeting,
     advertising,
     catalog,
     feeds,
@@ -30,6 +31,7 @@ MODULES = [
     fees,
     feeds,
     advertising,
+    ads_targeting,
 ]
 
 

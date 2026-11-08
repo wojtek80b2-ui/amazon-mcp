@@ -47,6 +47,24 @@ git checkout --quiet -B "$GALAZ" "origin/$GALAZ"
 NOWY=$(git rev-parse --short HEAD)
 echo "Kod: $STARY -> $NOWY (origin/$GALAZ)"
 
+# Dziennik zmian reklam (ADS_CHANGE_LOG) wymaga trwałego wolumenu /dane, bo kontener jest read_only.
+# Dopisywane raz do docker-compose.mcp.yml (kopia .bak-DATA); przy błędzie walidacji przywracana kopia.
+PLIK_COMPOSE=$KATALOG/docker-compose.mcp.yml
+if ! grep -q 'amazon_dziennik' "$PLIK_COMPOSE"; then
+    KOPIA="$PLIK_COMPOSE.bak-$(date +%Y%m%d-%H%M%S)"
+    cp -p "$PLIK_COMPOSE" "$KOPIA"
+    if ! python3 "$REPO/deploy/vps/dziennik_compose.py" "$PLIK_COMPOSE"; then
+        cp -p "$KOPIA" "$PLIK_COMPOSE"
+        echo "Nie udało się dopisać wolumenu dziennika: compose bez zmian. Przerywam."; exit 1
+    fi
+    if $COMPOSE config -q; then
+        echo "Kopia compose sprzed zmiany: $KOPIA"
+    else
+        cp -p "$KOPIA" "$PLIK_COMPOSE"
+        echo "Compose po zmianie nie przechodzi walidacji: przywrócona kopia. Przerywam."; exit 1
+    fi
+fi
+
 STAMP=$(date +%Y%m%d-%H%M)
 if docker image inspect "$OBRAZ:latest" >/dev/null 2>&1; then
     docker image tag "$OBRAZ:latest" "$OBRAZ:powrot-$STAMP"

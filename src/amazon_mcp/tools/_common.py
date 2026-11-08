@@ -24,4 +24,5 @@ def guarded_write(confirm: bool, action: str, request: dict[str, Any], execute: 
             "note": "Nic nie zostało wysłane. Wywołaj ponownie z confirm=true, aby wykonać.",
         }
     spapi.ensure_writes_allowed()
-    return {"status": "executed", "action": action, **execute()}
+    result = execute()
+    return {"status": result.pop("status", "executed"), "action": action, **result}

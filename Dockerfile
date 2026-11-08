@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip install --no-cache-dir . && useradd -r -u 10001 mcp
+RUN pip install --no-cache-dir . && useradd -r -u 10001 mcp && mkdir -p /dane && chown mcp /dane
 USER mcp
 ENV MCP_TRANSPORT=streamable-http MCP_HOST=0.0.0.0 MCP_PORT=8000
 EXPOSE 8000

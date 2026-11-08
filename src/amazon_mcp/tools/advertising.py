@@ -12,7 +12,7 @@ import json
 
 import httpx
 
-from amazon_mcp import mock_data
+from amazon_mcp import ads_log, mock_data
 from amazon_mcp.ads_client import SP_CAMPAIGN_MEDIA_TYPE, ads
 from amazon_mcp.client import AmazonAPIError, spapi
 from amazon_mcp.tools._common import READ_ONLY, WRITE, guarded_write
@@ -41,8 +41,29 @@ REPORTS = {
 
 TIME_UNITS = ("SUMMARY", "DAILY")
 
-# Pamięć podręczna: kod kraju -> profileId (z /v2/profiles), tylko w trybie live.
+# Pamięć podręczna z /v2/profiles (tylko tryb live): kod kraju -> profileId, profileId -> waluta.
 _profiles_by_country: dict[str, str] = {}
+_currency_by_profile: dict[str, str] = {}
+
+
+def _load_profiles() -> None:
+    if _profiles_by_country:
+        return
+    for prof in ads.request("GET", "/v2/profiles", profile_scope=False):
+        pid = str(prof["profileId"])
+        _currency_by_profile[pid] = str(prof.get("currencyCode") or "")
+        cc = str(prof.get("countryCode", "")).upper()
+        is_seller = (prof.get("accountInfo") or {}).get("type", "seller") == "seller"
+        if cc and (is_seller or cc not in _profiles_by_country):  # seller ma pierwszeństwo przed vendor
+            _profiles_by_country[cc] = pid
+
+
+def profile_currency(profile_id: str | None) -> str:
+    """Waluta profilu (EUR, PLN, SEK, GBP, TRY...); pusty napis, gdy nieznana."""
+    if not profile_id or not _live():
+        return ""
+    _load_profiles()
+    return _currency_by_profile.get(str(profile_id), "")
 
 
 def _live() -> bool:
@@ -57,12 +78,7 @@ def _profile(country: str | None) -> str | None:
     if country.isdigit():
         return country
     code = country.upper()
-    if not _profiles_by_country:
-        for prof in ads.request("GET", "/v2/profiles", profile_scope=False):
-            cc = str(prof.get("countryCode", "")).upper()
-            is_seller = (prof.get("accountInfo") or {}).get("type", "seller") == "seller"
-            if cc and (is_seller or cc not in _profiles_by_country):  # seller ma pierwszeństwo przed vendor
-                _profiles_by_country[cc] = str(prof["profileId"])
+    _load_profiles()
     if code not in _profiles_by_country:
         raise AmazonAPIError(f"Brak profilu reklamowego seller dla kraju '{code}'. "
                              f"Dostępne: {', '.join(sorted(_profiles_by_country))}")
@@ -129,12 +145,14 @@ def register(mcp) -> None:
         def execute():
             if not _live():
                 return {"mode": "mock", "payload": {"code": "SUCCESS", **changes}}
+            profile_id = _profile(country)
             data = ads.request("PUT", "/sp/campaigns", json={"campaigns": [changes]},
-                               media_type=SP_CAMPAIGN_MEDIA_TYPE, profile_id=_profile(country))
+                               media_type=SP_CAMPAIGN_MEDIA_TYPE, profile_id=profile_id)
             errors = (data.get("campaigns") or {}).get("error") or []
+            log = ads_log.log_change("update_ad_campaign", profile_id, [changes], {"errors": errors})
             if errors:
                 raise AmazonAPIError(f"Ads API odrzuciło zmianę: {errors}")
-            return {"mode": "live", "payload": data}
+            return {"mode": "live", "payload": data, "change_log": log}
 
         return guarded_write(confirm, f"Zmiana kampanii {campaign_id}", changes, execute)
 
